@@ -12,7 +12,7 @@
 </head>
 <body>
 <div class="container">
-  <header><div class="brand"><span class="logo" aria-hidden="true">♫</span><span>SpeakLab <span style="color:var(--muted);font-weight:400">/ English</span></span></div><span class="tag">Web Speech API · SWP09</span></header>
+  <header><div class="brand"><span class="logo" aria-hidden="true">♫</span><span>SpeakLab <span style="color:var(--muted);font-weight:400">/ English</span></span></div><span class="tag">Web Speech API · SWP09 · 修正版 v3.0</span></header>
   <section class="hero"><div class="eyebrow">LISTEN · SPEAK · IMPROVE</div><h1>英文聽讀練習，<br>從開口開始。</h1><p>點擊播放聆聽標準英文，再用麥克風跟讀。系統會將辨識出的文字與原句比較，立即呈現結果與累積正確率。</p></section>
   <main class="layout">
     <section class="card practice" aria-label="聽讀練習">
@@ -22,6 +22,9 @@
       <div class="prompt"><h2 id="targetText">apple</h2><div class="translation" id="meaning">蘋果</div></div>
       <div class="controls"><button class="btn primary" id="speakBtn" type="button">▶ 播放發音</button><button class="btn record" id="recordBtn" type="button">● 開始跟讀</button><button class="btn ghost" id="nextBtn" type="button">下一題 →</button></div>
       <div id="status" class="status" role="status" aria-live="polite">先聽一次發音，再按「開始跟讀」。</div>
+      <div class="status" style="margin-top:6px" id="diagnostic" aria-live="polite">辨識狀態：尚未開始</div>
+      <div class="controls" style="margin-top:14px"><button type="button" id="micTest" class="btn ghost small">測試麥克風</button><button type="button" id="manualToggle" class="btn ghost small">手動輸入辨識文字</button></div>
+      <div id="manualBox" style="display:none;margin-top:16px"><label for="manualAnswer" class="k">若瀏覽器辨識服務無法使用，可以輸入聽到的英文，先測試比對與計分功能</label><input id="manualAnswer" autocomplete="off" style="width:100%;padding:12px;border-radius:9px;border:1px solid #40506b;background:#0c172b;color:white" placeholder="輸入 apple 等英文"><button id="manualCheck" class="btn small" style="margin-top:9px" type="button">確認答案並計分</button></div>
       <div id="feedback" class="feedback" aria-live="polite"><div class="row"><strong id="verdict">結果</strong><span id="scoreBadge" class="pill"></span></div><hr class="divider" style="margin:13px 0"><div><span class="k">預期內容</span><span id="expectedOutput"></span></div><div style="margin-top:13px"><span class="k">語音辨識結果</span><span id="recognizedOutput" class="recognized"></span></div><p class="hint" id="feedbackTip" style="margin-bottom:0"></p></div>
     </section>
     <aside class="side">
@@ -40,6 +43,7 @@ const builtIn = {
   phrase:[{text:'Good morning.',zh:'早安'},{text:'How are you today?',zh:'你今天好嗎？'},{text:'Nice to meet you.',zh:'很高興認識你'},{text:'Could you say that again?',zh:'你可以再說一次嗎？'},{text:'I would like a cup of coffee.',zh:'我想要一杯咖啡'},{text:'Practice makes perfect.',zh:'熟能生巧'},{text:'The weather is beautiful today.',zh:'今天天氣很好'},{text:'I enjoy learning English.',zh:'我喜歡學英文'}]
 };
 const $=id=>document.getElementById(id);
+const diag=s=>{$('diagnostic').textContent='辨識狀態：'+s};
 const state={mode:'word',indices:{word:0,phrase:0},custom:{word:null,phrase:null},attempts:0,correct:0,history:[],recognition:null,listening:false,sessionId:0,recognitionTimer:null,stopTimer:null};
 const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 const synth=window.speechSynthesis;
@@ -51,7 +55,7 @@ function render(){const list=getList(),index=state.indices[state.mode]%list.leng
 function refreshStats(){ $('attempts').textContent=state.attempts;$('correct').textContent=state.correct;$('accuracy').textContent=state.attempts?Math.round(state.correct/state.attempts*100)+'%':'—';const hist=$('history');hist.replaceChildren();if(!state.history.length){const p=document.createElement('p');p.className='empty';p.textContent='目前尚無紀錄。完成一次跟讀後會顯示在這裡。';hist.append(p);return}state.history.slice(0,8).forEach(h=>{const row=document.createElement('div');row.className='history-item';const left=document.createElement('div');const top=document.createElement('b');top.textContent=h.target;const small=document.createElement('small');small.textContent='辨識：'+(h.heard||'（無文字）');left.append(top,small);const result=document.createElement('span');result.className=h.ok?'good':'bad';result.textContent=h.ok?'正確':'待加強';row.append(left,result);hist.append(row)})}
 function clearRecognitionTimers(){clearTimeout(state.recognitionTimer);clearTimeout(state.stopTimer);state.recognitionTimer=null;state.stopTimer=null}
 function resetRecordButton(){state.listening=false;state.recognition=null;$('recordBtn').classList.remove('active');$('recordBtn').textContent='● 開始跟讀';$('recordBtn').disabled=false}
-function cancelRecognition(){state.sessionId++;clearRecognitionTimers();const r=state.recognition;resetRecordButton();if(r){try{r.abort()}catch(e){}}}
+function cancelRecognition(){if(activeSession){activeSession.done=true;clearTimeout(activeSession.watchdog);clearTimeout(activeSession.stopWatchdog);activeSession=null}state.sessionId++;clearRecognitionTimers();const r=state.recognition;resetRecordButton();if(r){try{r.abort()}catch(e){}}}
 function changeMode(mode){cancelRecognition();if(synth)synth.cancel();state.mode=mode;render()}
 $('wordTab').addEventListener('click',()=>changeMode('word'));
 $('phraseTab').addEventListener('click',()=>changeMode('phrase'));
@@ -60,63 +64,88 @@ function voicesReady(){if(!synth)return;const previous=$('voiceSelect').value;co
 if(synth){voicesReady();if('onvoiceschanged' in synth)synth.addEventListener('voiceschanged',voicesReady)}else{$('speakBtn').disabled=true;setStatus('此瀏覽器不支援語音合成功能。')}
 $('speakBtn').addEventListener('click',()=>{if(!synth)return;cancelRecognition();synth.cancel();const u=new SpeechSynthesisUtterance(current().text);u.lang='en-US';u.rate=.9;u.pitch=1;const selected=$('voiceSelect').value,voice=synth.getVoices().find(v=>v.voiceURI===selected);if(voice){u.voice=voice;u.lang=voice.lang}u.onstart=()=>setStatus('正在播放英文發音…');u.onend=()=>setStatus('播放完成，按「開始跟讀」試試看。');u.onerror=()=>setStatus('發音播放失敗。請換一種語音或檢查瀏覽器設定。');synth.speak(u)});
 function present(heard,target){const ok=normalize(heard)===normalize(target);state.attempts++;if(ok)state.correct++;state.history.unshift({heard,target,ok});refreshStats();$('feedback').className='feedback visible '+(ok?'correct':'incorrect');$('verdict').textContent=ok?'辨識正確！':'再練習一次';$('verdict').className=ok?'good':'bad';$('scoreBadge').textContent=ok?'完全符合':'文字未完全符合';$('expectedOutput').textContent=target;$('recognizedOutput').textContent=heard||'（未收到辨識文字）';$('feedbackTip').textContent=ok?'很好！你可以再練一次或進入下一題。':'可再次播放原句並跟讀。系統是比對辨識文字，大小寫和一般標點不列入差異。';setStatus(ok?'完成辨識，答案正確。':'完成辨識，請參考比對結果。')}
+// SpeechRecognition may rely on an external speech provider even when the microphone works.
+// Use one finalization path, explicit diagnostics, and an unconditional watchdog.
+let activeSession=null;
+function finishSession(session,reason){
+ if(!session||session.done||activeSession!==session)return;
+ session.done=true;
+ clearTimeout(session.watchdog);
+ clearTimeout(session.stopWatchdog);
+ const recognized=(session.finalText||session.interimText).trim();
+ const error=session.error;
+ if(state.recognition===session.r)resetRecordButton();
+ activeSession=null;
+ try{session.r.abort()}catch(e){}
+ if(recognized){diag('取得文字（'+(session.finalText?'正式':'暫存')+'結果）');present(recognized,session.target)}
+ else{diag('辨識結束，無文字'+(error?'（'+error+'）':''));setStatus(error||reason||'沒有收到辨識文字。可以先按「測試麥克風」，或使用手動輸入。')}
+}
 $('recordBtn').addEventListener('click',()=>{
- if(state.listening){
-   const r=state.recognition;if(!r)return;
-   $('recordBtn').disabled=true;
-   setStatus('正在處理語音，請稍候…');
-   try{r.stop()}catch(e){if(typeof r._finish==='function')r._finish('停止錄音失敗，請重新開始。')}
-   // Some browser builds never emit onend/onresult after stop(). Never leave the UI stuck.
-   clearTimeout(state.stopTimer);
-   state.stopTimer=setTimeout(()=>{if(state.recognition===r&&typeof r._finish==='function')r._finish('辨識服務未回應。請確認網路連線、麥克風權限，然後再試一次。')},5000);
-   return;
+ if(activeSession&&!activeSession.done){
+  const session=activeSession;
+  if(session.stopping)return;
+  session.stopping=true;
+  $('recordBtn').disabled=true;
+  setStatus('正在停止辨識，最多等待 4 秒…');diag('已按停止鍵，等待瀏覽器回傳結果');
+  session.stopWatchdog=setTimeout(()=>finishSession(session,'辨識服務沒有回傳文字（停止後逾時）。請按「測試麥克風」查看原因。'),4000);
+  try{session.r.stop()}catch(e){finishSession(session,'停止辨識失敗：'+e.message)}
+  return;
  }
- if(!Recognition){setStatus('此瀏覽器不支援 SpeechRecognition，請使用最新版 Chrome 或 Edge。');return}
- if(!window.isSecureContext){setStatus('麥克風需要 HTTPS 或 localhost。請部署至 GitHub Pages 後再試。');return}
+ if(!Recognition){diag('瀏覽器不支援');setStatus('此瀏覽器不支援語音辨識，請使用最新版 Chrome 或 Edge。');return}
+ if(!window.isSecureContext){diag('不安全的網頁來源：'+location.protocol);setStatus('此頁不是安全來源。請用 GitHub Pages HTTPS 開啟再測試。');return}
  if(synth)synth.cancel();
  cancelRecognition();
- const id=state.sessionId,target=current().text,r=new Recognition();
+ const id=state.sessionId;
+ let r;
+ try{r=new Recognition()}catch(e){diag('建立辨識物件失敗');setStatus(e.message);return}
+ const session={id,r,target:current().text,finalText:'',interimText:'',done:false,stopping:false,error:'',watchdog:null,stopWatchdog:null};
+ activeSession=session;
  state.recognition=r;state.listening=true;
  r.lang='en-US';r.continuous=false;r.interimResults=true;r.maxAlternatives=1;
- let received=false,latestTranscript='',lastError='';
- const finish=(fallback)=>{
-   if(id!==state.sessionId||state.recognition!==r)return;
-   clearRecognitionTimers();resetRecordButton();
-   if(!received&&latestTranscript.trim()){received=true;present(latestTranscript.trim(),target)}
-   else if(!received)setStatus(lastError||fallback||'未取得辨識文字。請靠近麥克風、清楚朗讀後再試一次。');
- };
- r._finish=finish;
- $('recordBtn').classList.add('active');$('recordBtn').textContent='■ 結束跟讀';
- setStatus('正在聆聽…請清楚朗讀畫面上的英文。');
+ $('recordBtn').classList.add('active');$('recordBtn').textContent='■ 結束跟讀';$('recordBtn').disabled=false;
+ diag('等待啟動');setStatus('請清楚朗讀畫面上的英文。若取得辨識文字，會自動顯示結果。');
+ r.onstart=()=>{if(activeSession===session)diag('已開始語音辨識')};
+ r.onaudiostart=()=>{if(activeSession===session)diag('已開始接收麥克風聲音')};
+ r.onsoundstart=()=>{if(activeSession===session)diag('已偵測到聲音')};
+ r.onspeechstart=()=>{if(activeSession===session)diag('已偵測到人聲')};
  r.onresult=e=>{
-   if(id!==state.sessionId||received)return;
-   let finalText='',interimText='';
-   for(const result of e.results){
-     const transcript=result[0]?.transcript||'';
-     if(result.isFinal)finalText+=transcript+' ';
-     else interimText+=transcript+' ';
-   }
-   latestTranscript=(finalText||interimText).trim();
-   if(finalText.trim()){
-     received=true;present(finalText.trim(),target);
-     // Do not wait for onend to free the UI once a final result arrives.
-     clearRecognitionTimers();resetRecordButton();
-   } else if(latestTranscript){setStatus('辨識中：'+latestTranscript)}
+  if(activeSession!==session||session.done)return;
+  let f='',i='';
+  for(let n=0;n<e.results.length;n++){
+   const item=e.results[n],t=item[0]?.transcript||'';
+   if(item.isFinal)f+=t+' ';else i+=t+' ';
+  }
+  session.finalText=f.trim();session.interimText=i.trim();
+  diag('收到'+(session.finalText?'正式':'暫存')+'辨識結果');
+  if(session.finalText){finishSession(session)}
+  else if(session.interimText){setStatus('辨識中：'+session.interimText)}
  };
  r.onerror=e=>{
-   if(id!==state.sessionId)return;
-   const messages={'not-allowed':'麥克風權限遭拒，請在網址列允許麥克風。','audio-capture':'找不到可用的麥克風，請確認裝置。','network':'語音辨識服務連線失敗。請確認網路並改用 HTTPS 的 Chrome／Edge。','no-speech':'沒有聽到清楚語音，請再試一次。','language-not-supported':'目前不支援 en-US 語音辨識。','service-not-allowed':'瀏覽器不允許使用語音辨識服務。','aborted':'錄音已中止。'};
-   lastError=messages[e.error]||`語音辨識失敗：${e.error}`;
-   finish(lastError);
+  if(activeSession!==session||session.done)return;
+  const msg={'not-allowed':'麥克風權限被拒絕，請在瀏覽器網址列允許麥克風。','audio-capture':'找不到可用的麥克風。','network':'網路或瀏覽器語音辨識服務無法連線。即使麥克風正常也可能發生。','no-speech':'沒有偵測到語音。','service-not-allowed':'瀏覽器禁止使用語音辨識服務。','language-not-supported':'不支援 en-US 語音辨識。','aborted':'語音辨識已中止。'};
+  session.error=msg[e.error]||('辨識錯誤：'+e.error);
+  diag('錯誤事件：'+e.error);
+  finishSession(session,session.error)
  };
- r.onend=()=>finish('語音辨識已結束，但沒有取得文字。請重新朗讀一次。');
- state.recognitionTimer=setTimeout(()=>{
-   if(state.recognition!==r)return;
-   try{r.stop()}catch(e){}
-   state.stopTimer=setTimeout(()=>finish('辨識逾時：未收到語音辨識結果。請確認網路或改用 Chrome／Edge。'),5000);
- },20000);
- try{r.start()}catch(e){lastError='無法啟動錄音，請確認麥克風權限後重試。';finish(lastError)}
+ r.onend=()=>{if(activeSession===session)finishSession(session,'語音辨識已停止，但沒有收到文字。請按「測試麥克風」確認收音。')};
+ // Safety timeout starts before recognition.start; independent of stop/end/result events.
+ session.watchdog=setTimeout(()=>finishSession(session,'語音辨識超過 12 秒未完成。可能是辨識服務連線問題；請測試麥克風或改用 HTTPS。'),12000);
+ try{r.start()}catch(e){session.error='啟動辨識失敗：'+e.message;finishSession(session,session.error)}
 });
+$('micTest').addEventListener('click',async()=>{
+ diag('正在測試麥克風權限…');
+ if(!navigator.mediaDevices?.getUserMedia){diag('此頁無法使用 getUserMedia');setStatus('請以 HTTPS 或 localhost 開啟網頁，以使用麥克風。');return}
+ let stream;
+ try{
+  stream=await navigator.mediaDevices.getUserMedia({audio:true});
+  const track=stream.getAudioTracks()[0];
+  diag('麥克風測試成功：'+(track?.label||'已取得音訊軌道'));
+  setStatus('麥克風授權正常。如果仍無辨識文字，通常是瀏覽器語音辨識服務無法回應，非本頁按鈕故障。');
+ }catch(e){diag('麥克風測試失敗：'+e.name);setStatus('無法存取麥克風：'+e.message)}
+ finally{stream?.getTracks().forEach(t=>t.stop())}
+});
+$('manualToggle').addEventListener('click',()=>{const box=$('manualBox');box.style.display=box.style.display==='none'?'block':'none'});
+$('manualCheck').addEventListener('click',()=>{const value=$('manualAnswer').value.trim();if(!value){setStatus('請先輸入英文內容。');return}cancelRecognition();activeSession=null;diag('手動輸入測試');present(value,current().text)});
 $('loadCustomBtn').addEventListener('click',()=>{const lines=$('customWords').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);if(!lines.length){setStatus('請先在右側輸入至少一個英文單字或句子。');return}if(lines.length>100){setStatus('一次最多載入 100 題，請減少題數。');return}cancelRecognition();state.custom[state.mode]=lines.map(text=>({text,zh:''}));state.indices[state.mode]=0;render();setStatus(`已載入 ${lines.length} 題自訂練習內容。`)});
 $('restoreBtn').addEventListener('click',()=>{cancelRecognition();state.custom[state.mode]=null;state.indices[state.mode]=0;render();setStatus('已恢復此模式的內建題庫。')});
 $('resetBtn').addEventListener('click',()=>{state.attempts=0;state.correct=0;state.history=[];refreshStats();setStatus('統計與紀錄已重設。')});
