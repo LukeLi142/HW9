@@ -12,7 +12,7 @@
 </head>
 <body>
 <div class="container">
-  <header><div class="brand"><span class="logo" aria-hidden="true">♫</span><span>SpeakLab <span style="color:var(--muted);font-weight:400">/ English</span></span></div><span class="tag">Web Speech API · SWP09 · 診斷版 v4.0</span></header>
+  <header><div class="brand"><span class="logo" aria-hidden="true">♫</span><span>SpeakLab <span style="color:var(--muted);font-weight:400">/ English</span></span></div><span class="tag">Web Speech API · SWP09 · 跟讀修正版 v5.0</span></header>
   <section class="hero"><div class="eyebrow">LISTEN · SPEAK · IMPROVE</div><h1>英文聽讀練習，<br>從開口開始。</h1><p>點擊播放聆聽標準英文，再用麥克風跟讀。系統會將辨識出的文字與原句比較，立即呈現結果與累積正確率。</p></section>
   <main class="layout">
     <section class="card practice" aria-label="聽讀練習">
@@ -21,9 +21,9 @@
       <div class="row"><span id="itemCount" class="count">第 1 / 8 題</span><span class="pill">English · en-US</span></div>
       <div class="prompt"><h2 id="targetText">apple</h2><div class="translation" id="meaning">蘋果</div></div>
       <div class="controls"><button class="btn primary" id="speakBtn" type="button">▶ 播放發音</button><button class="btn record" id="recordBtn" type="button">● 開始跟讀</button><button class="btn ghost" id="nextBtn" type="button">下一題 →</button></div>
-      <div id="status" class="status" role="status" aria-live="polite">先聽一次發音，再按「開始跟讀」。</div>
+      <div id="status" class="status" role="status" aria-live="polite">先聽一次發音，再按「開始跟讀」，請說完後等待自動辨識。</div>
       <div class="status" style="margin-top:6px" id="diagnostic" aria-live="polite">辨識狀態：尚未開始</div>
-      <div class="controls" style="margin-top:14px"><button type="button" id="micTest" class="btn ghost small">測試麥克風</button><button type="button" id="manualToggle" class="btn ghost small">手動輸入辨識文字</button></div>
+      <div class="hint" style="text-align:center">建議：按開始跟讀後直接朗讀，說完先停頓 2～3 秒，讓瀏覽器自動提交辨識結果；若仍在聆聽，再按結束。</div><div class="controls" style="margin-top:14px"><button type="button" id="micTest" class="btn ghost small">測試麥克風</button><button type="button" id="manualToggle" class="btn ghost small">手動輸入辨識文字</button></div>
       <details id="diagnosticsPanel" style="margin-top:14px;border:1px solid #40506b;border-radius:12px;padding:12px"><summary style="cursor:pointer;color:#b9d9fc">查看辨識事件紀錄與環境檢查</summary><div id="environment" class="hint" style="white-space:pre-wrap"></div><pre id="eventLog" style="white-space:pre-wrap;overflow:auto;font-size:12px;max-height:180px;color:#d5e2ff"></pre><button type="button" class="btn ghost small" id="copyDiagnostics">複製診斷資訊</button></details><div id="manualBox" style="display:none;margin-top:16px"><label for="manualAnswer" class="k">若瀏覽器辨識服務無法使用，可以輸入聽到的英文，先測試比對與計分功能</label><input id="manualAnswer" autocomplete="off" style="width:100%;padding:12px;border-radius:9px;border:1px solid #40506b;background:#0c172b;color:white" placeholder="輸入 apple 等英文"><button id="manualCheck" class="btn small" style="margin-top:9px" type="button">確認答案並計分</button></div>
       <div id="feedback" class="feedback" aria-live="polite"><div class="row"><strong id="verdict">結果</strong><span id="scoreBadge" class="pill"></span></div><hr class="divider" style="margin:13px 0"><div><span class="k">預期內容</span><span id="expectedOutput"></span></div><div style="margin-top:13px"><span class="k">語音辨識結果</span><span id="recognizedOutput" class="recognized"></span></div><p class="hint" id="feedbackTip" style="margin-bottom:0"></p></div>
     </section>
@@ -56,7 +56,7 @@ const getList=()=>state.custom[state.mode]||builtIn[state.mode];
 const current=()=>getList()[state.indices[state.mode]%getList().length];
 const normalize=s=>(s||'').toLowerCase().normalize('NFKC').replace(/[^a-z0-9\s']/g,'').replace(/\s+/g,' ').trim();
 const setStatus=s=>{$('status').textContent=s};
-function render(){const list=getList(),index=state.indices[state.mode]%list.length;const item=current();$('targetText').textContent=item.text;$('meaning').textContent=item.zh||'跟著發音練習';$('itemCount').textContent=`第 ${index+1} / ${list.length} 題`;$('progressFill').style.width=`${index/list.length*100}%`;$('wordTab').classList.toggle('active',state.mode==='word');$('phraseTab').classList.toggle('active',state.mode==='phrase');$('wordTab').setAttribute('aria-pressed',state.mode==='word');$('phraseTab').setAttribute('aria-pressed',state.mode==='phrase');$('feedback').className='feedback';setStatus('先聽一次發音，再按「開始跟讀」。')}
+function render(){const list=getList(),index=state.indices[state.mode]%list.length;const item=current();$('targetText').textContent=item.text;$('meaning').textContent=item.zh||'跟著發音練習';$('itemCount').textContent=`第 ${index+1} / ${list.length} 題`;$('progressFill').style.width=`${index/list.length*100}%`;$('wordTab').classList.toggle('active',state.mode==='word');$('phraseTab').classList.toggle('active',state.mode==='phrase');$('wordTab').setAttribute('aria-pressed',state.mode==='word');$('phraseTab').setAttribute('aria-pressed',state.mode==='phrase');$('feedback').className='feedback';setStatus('先聽一次發音，再按「開始跟讀」，請說完後等待自動辨識。')}
 function refreshStats(){ $('attempts').textContent=state.attempts;$('correct').textContent=state.correct;$('accuracy').textContent=state.attempts?Math.round(state.correct/state.attempts*100)+'%':'—';const hist=$('history');hist.replaceChildren();if(!state.history.length){const p=document.createElement('p');p.className='empty';p.textContent='目前尚無紀錄。完成一次跟讀後會顯示在這裡。';hist.append(p);return}state.history.slice(0,8).forEach(h=>{const row=document.createElement('div');row.className='history-item';const left=document.createElement('div');const top=document.createElement('b');top.textContent=h.target;const small=document.createElement('small');small.textContent='辨識：'+(h.heard||'（無文字）');left.append(top,small);const result=document.createElement('span');result.className=h.ok?'good':'bad';result.textContent=h.ok?'正確':'待加強';row.append(left,result);hist.append(row)})}
 function clearRecognitionTimers(){clearTimeout(state.recognitionTimer);clearTimeout(state.stopTimer);state.recognitionTimer=null;state.stopTimer=null}
 function resetRecordButton(){state.listening=false;state.recognition=null;$('recordBtn').classList.remove('active');$('recordBtn').textContent='● 開始跟讀';$('recordBtn').disabled=false}
@@ -91,7 +91,7 @@ $('recordBtn').addEventListener('click',()=>{
   if(session.stopping)return;
   session.stopping=true;
   $('recordBtn').disabled=true;
-  setStatus('正在停止辨識，最多等待 4 秒…');diag('已按停止鍵，等待瀏覽器回傳結果');
+  setStatus('正在停止辨識，最多等待 4 秒…');diag('手動停止；偵測聲音='+!!session.heardSound+'，偵測人聲='+!!session.heardSpeech+'，暫存文字='+!!session.interimText);
   session.stopWatchdog=setTimeout(()=>finishSession(session,'辨識服務沒有回傳文字（停止後逾時）。請按「測試麥克風」查看原因。'),4000);
   try{session.r.stop()}catch(e){finishSession(session,'停止辨識失敗：'+e.message)}
   return;
@@ -103,16 +103,16 @@ $('recordBtn').addEventListener('click',()=>{
  const id=state.sessionId;
  let r;
  try{r=new Recognition()}catch(e){diag('建立辨識物件失敗');setStatus(e.message);return}
- const session={id,r,target:current().text,finalText:'',interimText:'',done:false,stopping:false,error:'',watchdog:null,stopWatchdog:null};logEvent('建立語音辨識物件，語系 en-US');
+ const session={id,r,target:current().text,finalText:'',interimText:'',done:false,stopping:false,error:'',heardSound:false,heardSpeech:false,watchdog:null,stopWatchdog:null};logEvent('建立語音辨識物件，語系 en-US');
  activeSession=session;
  state.recognition=r;state.listening=true;
- r.lang='en-US';r.continuous=false;r.interimResults=true;r.maxAlternatives=1;
+ r.lang='en-US';r.continuous=false;r.interimResults=true;r.maxAlternatives=3;
  $('recordBtn').classList.add('active');$('recordBtn').textContent='■ 結束跟讀';$('recordBtn').disabled=false;
- diag('等待啟動');setStatus('請清楚朗讀畫面上的英文。若取得辨識文字，會自動顯示結果。');
+ diag('等待啟動');setStatus('請直接說出英文，說完後停頓數秒，等待自動辨識。');
  r.onstart=()=>{if(activeSession===session)diag('已開始語音辨識')};
  r.onaudiostart=()=>{if(activeSession===session)diag('已開始接收麥克風聲音')};
- r.onsoundstart=()=>{if(activeSession===session)diag('已偵測到聲音')};
- r.onspeechstart=()=>{if(activeSession===session)diag('已偵測到人聲')};
+ r.onsoundstart=()=>{if(activeSession===session){session.heardSound=true;diag('已偵測到聲音')}};
+ r.onspeechstart=()=>{if(activeSession===session){session.heardSpeech=true;diag('已偵測到人聲')}};
  r.onresult=e=>{
   if(activeSession!==session||session.done)return;
   let f='',i='';
@@ -132,7 +132,7 @@ $('recordBtn').addEventListener('click',()=>{
   diag('錯誤事件：'+e.error);
   finishSession(session,session.error)
  };
- r.onend=()=>{if(activeSession===session){diag('收到 onend 結束事件');finishSession(session,'瀏覽器已結束語音辨識，但沒有傳回任何文字。這通常表示瀏覽器辨識服務不可用或沒有收到可辨識的人聲。')}};
+ r.onend=()=>{if(activeSession===session){diag('收到 onend 結束事件');finishSession(session,session.heardSpeech?'已偵測人聲，但辨識服務沒有回傳文字。請嘗試 Edge 或 GitHub Pages HTTPS。':session.heardSound?'只偵測到聲音，尚未確認是人聲。請靠近麥克風、安靜環境重試。':'辨識引擎沒有產生文字，也沒有回報偵測到人聲；請確認瀏覽器選用的輸入裝置，或改用 Edge 測試。')}};
  // Safety timeout starts before recognition.start; independent of stop/end/result events.
  session.watchdog=setTimeout(()=>finishSession(session,'語音辨識超過 20 秒未完成。可能是辨識服務連線問題；請測試麥克風或改用 HTTPS。'),20000);
  try{r.start()}catch(e){session.error='啟動辨識失敗：'+e.message;finishSession(session,session.error)}
@@ -154,7 +154,7 @@ $('manualCheck').addEventListener('click',()=>{const value=$('manualAnswer').val
 $('loadCustomBtn').addEventListener('click',()=>{const lines=$('customWords').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);if(!lines.length){setStatus('請先在右側輸入至少一個英文單字或句子。');return}if(lines.length>100){setStatus('一次最多載入 100 題，請減少題數。');return}cancelRecognition();state.custom[state.mode]=lines.map(text=>({text,zh:''}));state.indices[state.mode]=0;render();setStatus(`已載入 ${lines.length} 題自訂練習內容。`)});
 $('restoreBtn').addEventListener('click',()=>{cancelRecognition();state.custom[state.mode]=null;state.indices[state.mode]=0;render();setStatus('已恢復此模式的內建題庫。')});
 $('resetBtn').addEventListener('click',()=>{state.attempts=0;state.correct=0;state.history=[];refreshStats();setStatus('統計與紀錄已重設。')});
-render();refreshStats();showEnvironment();logEvent('頁面載入完成 v4.0');
+render();refreshStats();showEnvironment();logEvent('頁面載入完成 v5.0');
 </script>
 </body>
 </html>
