@@ -12,7 +12,7 @@
 </head>
 <body>
 <div class="container">
-  <header><div class="brand"><span class="logo" aria-hidden="true">♫</span><span>SpeakLab <span style="color:var(--muted);font-weight:400">/ English</span></span></div><span class="tag">Web Speech API · SWP09 · 修正版 v3.0</span></header>
+  <header><div class="brand"><span class="logo" aria-hidden="true">♫</span><span>SpeakLab <span style="color:var(--muted);font-weight:400">/ English</span></span></div><span class="tag">Web Speech API · SWP09 · 診斷版 v4.0</span></header>
   <section class="hero"><div class="eyebrow">LISTEN · SPEAK · IMPROVE</div><h1>英文聽讀練習，<br>從開口開始。</h1><p>點擊播放聆聽標準英文，再用麥克風跟讀。系統會將辨識出的文字與原句比較，立即呈現結果與累積正確率。</p></section>
   <main class="layout">
     <section class="card practice" aria-label="聽讀練習">
@@ -24,7 +24,7 @@
       <div id="status" class="status" role="status" aria-live="polite">先聽一次發音，再按「開始跟讀」。</div>
       <div class="status" style="margin-top:6px" id="diagnostic" aria-live="polite">辨識狀態：尚未開始</div>
       <div class="controls" style="margin-top:14px"><button type="button" id="micTest" class="btn ghost small">測試麥克風</button><button type="button" id="manualToggle" class="btn ghost small">手動輸入辨識文字</button></div>
-      <div id="manualBox" style="display:none;margin-top:16px"><label for="manualAnswer" class="k">若瀏覽器辨識服務無法使用，可以輸入聽到的英文，先測試比對與計分功能</label><input id="manualAnswer" autocomplete="off" style="width:100%;padding:12px;border-radius:9px;border:1px solid #40506b;background:#0c172b;color:white" placeholder="輸入 apple 等英文"><button id="manualCheck" class="btn small" style="margin-top:9px" type="button">確認答案並計分</button></div>
+      <details id="diagnosticsPanel" style="margin-top:14px;border:1px solid #40506b;border-radius:12px;padding:12px"><summary style="cursor:pointer;color:#b9d9fc">查看辨識事件紀錄與環境檢查</summary><div id="environment" class="hint" style="white-space:pre-wrap"></div><pre id="eventLog" style="white-space:pre-wrap;overflow:auto;font-size:12px;max-height:180px;color:#d5e2ff"></pre><button type="button" class="btn ghost small" id="copyDiagnostics">複製診斷資訊</button></details><div id="manualBox" style="display:none;margin-top:16px"><label for="manualAnswer" class="k">若瀏覽器辨識服務無法使用，可以輸入聽到的英文，先測試比對與計分功能</label><input id="manualAnswer" autocomplete="off" style="width:100%;padding:12px;border-radius:9px;border:1px solid #40506b;background:#0c172b;color:white" placeholder="輸入 apple 等英文"><button id="manualCheck" class="btn small" style="margin-top:9px" type="button">確認答案並計分</button></div>
       <div id="feedback" class="feedback" aria-live="polite"><div class="row"><strong id="verdict">結果</strong><span id="scoreBadge" class="pill"></span></div><hr class="divider" style="margin:13px 0"><div><span class="k">預期內容</span><span id="expectedOutput"></span></div><div style="margin-top:13px"><span class="k">語音辨識結果</span><span id="recognizedOutput" class="recognized"></span></div><p class="hint" id="feedbackTip" style="margin-bottom:0"></p></div>
     </section>
     <aside class="side">
@@ -43,7 +43,12 @@ const builtIn = {
   phrase:[{text:'Good morning.',zh:'早安'},{text:'How are you today?',zh:'你今天好嗎？'},{text:'Nice to meet you.',zh:'很高興認識你'},{text:'Could you say that again?',zh:'你可以再說一次嗎？'},{text:'I would like a cup of coffee.',zh:'我想要一杯咖啡'},{text:'Practice makes perfect.',zh:'熟能生巧'},{text:'The weather is beautiful today.',zh:'今天天氣很好'},{text:'I enjoy learning English.',zh:'我喜歡學英文'}]
 };
 const $=id=>document.getElementById(id);
-const diag=s=>{$('diagnostic').textContent='辨識狀態：'+s};
+const eventLines=[];
+const logEvent=(s)=>{eventLines.push(new Date().toLocaleTimeString()+' '+s);if(eventLines.length>35)eventLines.shift();const log=$('eventLog');if(log)log.textContent=eventLines.join('\n')};
+const diag=s=>{$('diagnostic').textContent='辨識狀態：'+s;logEvent(s)};
+function showEnvironment(){const env=[`網頁位置：${location.protocol}//${location.host||'(本機檔案)'}`,`安全環境：${window.isSecureContext?'是':'否'}`,`辨識 API：${Recognition?'支援':'不支援'}`,`網路狀態：${navigator.onLine?'瀏覽器回報已連線':'瀏覽器回報離線'}`,`瀏覽器：${navigator.userAgent}`];$('environment').textContent=env.join('\n');}
+$('copyDiagnostics').addEventListener('click',()=>{const str=$('environment').textContent+'\n'+eventLines.join('\n');navigator.clipboard?.writeText(str).then(()=>setStatus('已複製診斷資訊。')).catch(()=>setStatus('無法自動複製，請選取診斷資訊複製。'))});
+
 const state={mode:'word',indices:{word:0,phrase:0},custom:{word:null,phrase:null},attempts:0,correct:0,history:[],recognition:null,listening:false,sessionId:0,recognitionTimer:null,stopTimer:null};
 const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
 const synth=window.speechSynthesis;
@@ -98,7 +103,7 @@ $('recordBtn').addEventListener('click',()=>{
  const id=state.sessionId;
  let r;
  try{r=new Recognition()}catch(e){diag('建立辨識物件失敗');setStatus(e.message);return}
- const session={id,r,target:current().text,finalText:'',interimText:'',done:false,stopping:false,error:'',watchdog:null,stopWatchdog:null};
+ const session={id,r,target:current().text,finalText:'',interimText:'',done:false,stopping:false,error:'',watchdog:null,stopWatchdog:null};logEvent('建立語音辨識物件，語系 en-US');
  activeSession=session;
  state.recognition=r;state.listening=true;
  r.lang='en-US';r.continuous=false;r.interimResults=true;r.maxAlternatives=1;
@@ -127,9 +132,9 @@ $('recordBtn').addEventListener('click',()=>{
   diag('錯誤事件：'+e.error);
   finishSession(session,session.error)
  };
- r.onend=()=>{if(activeSession===session)finishSession(session,'語音辨識已停止，但沒有收到文字。請按「測試麥克風」確認收音。')};
+ r.onend=()=>{if(activeSession===session){diag('收到 onend 結束事件');finishSession(session,'瀏覽器已結束語音辨識，但沒有傳回任何文字。這通常表示瀏覽器辨識服務不可用或沒有收到可辨識的人聲。')}};
  // Safety timeout starts before recognition.start; independent of stop/end/result events.
- session.watchdog=setTimeout(()=>finishSession(session,'語音辨識超過 12 秒未完成。可能是辨識服務連線問題；請測試麥克風或改用 HTTPS。'),12000);
+ session.watchdog=setTimeout(()=>finishSession(session,'語音辨識超過 20 秒未完成。可能是辨識服務連線問題；請測試麥克風或改用 HTTPS。'),20000);
  try{r.start()}catch(e){session.error='啟動辨識失敗：'+e.message;finishSession(session,session.error)}
 });
 $('micTest').addEventListener('click',async()=>{
@@ -149,7 +154,7 @@ $('manualCheck').addEventListener('click',()=>{const value=$('manualAnswer').val
 $('loadCustomBtn').addEventListener('click',()=>{const lines=$('customWords').value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean);if(!lines.length){setStatus('請先在右側輸入至少一個英文單字或句子。');return}if(lines.length>100){setStatus('一次最多載入 100 題，請減少題數。');return}cancelRecognition();state.custom[state.mode]=lines.map(text=>({text,zh:''}));state.indices[state.mode]=0;render();setStatus(`已載入 ${lines.length} 題自訂練習內容。`)});
 $('restoreBtn').addEventListener('click',()=>{cancelRecognition();state.custom[state.mode]=null;state.indices[state.mode]=0;render();setStatus('已恢復此模式的內建題庫。')});
 $('resetBtn').addEventListener('click',()=>{state.attempts=0;state.correct=0;state.history=[];refreshStats();setStatus('統計與紀錄已重設。')});
-render();refreshStats();
+render();refreshStats();showEnvironment();logEvent('頁面載入完成 v4.0');
 </script>
 </body>
 </html>
